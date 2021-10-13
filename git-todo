@@ -1,0 +1,62 @@
+#!/bin/sh
+########################################################################################################################
+# Print or edit todolist for current branch.
+# https://github.com/PotatoMaster101/git-todo
+########################################################################################################################
+
+command -v git > /dev/null 2>&1 || { echo 'ERROR: Program not found: git' 1>&2; exit 1; }
+git rev-parse --is-inside-work-tree > /dev/null 2>&1 || { echo 'ERROR: Not in repo' 1>&2; exit 1; }
+
+extension='.md'
+todo_root="$HOME/.git-todo"
+todo_dir="$todo_root/$(pwd | base64)"
+todo_file="$todo_dir/$(git branch --show-current)$extension"
+
+[ ! -d "$todo_root" ] && mkdir -p "$todo_root"
+[ "$#" -eq 0 ] && { cat "$todo_file" 2> /dev/null; exit 0; }    # print todolist when no arg
+
+edit_todo() {
+    editor=$(git config core.editor)
+    [ -z "$editor" ] && { echo 'ERROR: Empty core.editor' 1>&2; exit 1; }
+    [ ! -d "$todo_dir" ] && mkdir -p "$todo_dir"
+    $editor "$todo_file"
+}
+
+clear_todo() {
+    rm -rf "$todo_file" > /dev/null 2>&1 || { echo 'ERROR: Failed to remote TODO file' 1>&2; exit 1; }
+}
+
+verify_repo() {
+    for dir in $(find "$todo_root" -mindepth 1 -type d); do
+        repo=$(basename "$dir" | base64 -d 2> /dev/null)
+        [ ! -d "$repo" ] && { rm -rf "$dir"; continue; }
+
+        branches=$(git --git-dir "$repo/.git" branch --format '%(refname:short)' | tr '\n' ' ')
+        for file in $(find "$dir" -mindepth 1 -type f); do
+            todo=$(basename "$file")
+            noext="${todo%"$extension"}"
+            [ "${branches#*"$noext"}" = "$branches" ] && rm -rf "$file"
+        done
+    done
+}
+
+print_usage() {
+    echo "Unknown option: $1"
+    echo 'USAGE: git todo [-e|--edit] [-c|--clear] [-v|--verify]'
+    echo ''
+    echo 'OPTIONS:'
+    echo '  -e|--edit       Creates or edits todolist for current branch'
+    echo '  -c|--clear      Clears todolist for current branch'
+    echo '  -v|--verify     Verifies all todolist for all repos, remove if invalid'
+}
+
+case "$1" in
+    '-e'|'--edit')
+        edit_todo;;
+    '-c'|'--clear')
+        clear_todo;;
+    '-v'|'--verify')
+        verify_repo;;
+    *)
+        print_usage "$1";;
+esac
